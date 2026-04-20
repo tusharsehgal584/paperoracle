@@ -7,7 +7,7 @@ Built with **LangChain · FAISS · HuggingFace Embeddings · Gemini 2.0 Flash ·
 ---
 
 ## 🚀 Live Demo
-[👉 Try PaperOracle](https://tusharsehgal584-paperoracle-main-app-xxx.streamlit.app) *(add your deployed link here)*
+[👉 Try PaperOracle](https://paperoracle.streamlit.app/) 
 
 ---
 
