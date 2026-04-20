@@ -205,7 +205,7 @@ def build_index(file_bytes: bytes, filename: str):
 # ─────────────────────────────────────────────
 def ask_gemini(api_key: str, question: str, context_chunks: list, chat_history: list) -> str:
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")  # free tier model
+    model = genai.GenerativeModel("gemini-2.0-flash")  # free tier model
 
     context = "\n\n---\n\n".join([
         f"[Page {doc.metadata.get('page', 0) + 1}]\n{doc.page_content}"
