@@ -1,23 +1,23 @@
 # 🔮 PaperOracle — AI Document Q&A
 
-> Upload any PDF. Ask questions in plain English. Get sourced answers powered by Claude AI.
+> Upload any PDF. Ask questions in plain English. Get sourced answers powered by Google Gemini AI.
 
-Built with **LangChain · FAISS · HuggingFace Embeddings · Claude AI (Anthropic) · Streamlit**
+Built with **LangChain · FAISS · HuggingFace Embeddings · Gemini 2.0 Flash · Streamlit**
 
 ---
 
 ## 🚀 Live Demo
-[👉 Try PaperOracle on Streamlit Cloud](#) *(add your deployed link here)*
+[👉 Try PaperOracle](https://tusharsehgal584-paperoracle-main-app-xxx.streamlit.app) *(add your deployed link here)*
 
 ---
 
 ## 🧩 What It Does
 
-- Upload **any PDF** (research paper, textbook, resume, report, contract)
+- Upload **any PDF** — research paper, textbook, resume, report, contract
 - Ask **natural language questions** about the document
-- Get **accurate, sourced answers** with page references
+- Get **accurate answers with page citations**
 - Supports **follow-up questions** via conversation memory
-- Powered by **Claude AI** — reliable, fast, no rate-limit headaches
+- Powered by **Gemini 2.0 Flash** — completely free, no credit card needed
 
 ---
 
@@ -36,7 +36,7 @@ FAISS Vector Store  →  indexes all vectors for similarity search
     ↓
 User Question  →  embedded  →  top-3 similar chunks retrieved
     ↓
-Claude AI (claude-haiku-4-5)  →  generates grounded answer with page citations
+Gemini 2.0 Flash  →  generates grounded answer with page citations
     ↓
 Answer + Source Pages displayed to user
 ```
@@ -49,10 +49,10 @@ Answer + Source Pages displayed to user
 |---|---|
 | UI | Streamlit |
 | RAG Framework | LangChain |
-| Embeddings | HuggingFace sentence-transformers (MiniLM) — runs locally |
+| Embeddings | HuggingFace sentence-transformers (MiniLM) — runs locally, free |
 | Vector Store | FAISS (Meta) |
-| LLM | Claude Haiku via Anthropic API |
-| PDF Loading | PyPDFLoader |
+| LLM | Gemini 2.0 Flash (Google AI) — free tier, 1500 req/day |
+| PDF Loading | PyPDFLoader (pypdf) |
 
 ---
 
@@ -70,7 +70,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-You'll need a free Anthropic API key from [console.anthropic.com](https://console.anthropic.com)
+Get a **free** Gemini API key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — just sign in with Google, no credit card needed.
 
 ---
 
@@ -92,16 +92,16 @@ git push -u origin main
 3. Select your `paperoracle` repo → branch `main` → file `app.py`
 4. Click **Deploy**
 
-**Step 3 — (Optional) Pre-fill API key as a secret**
-1. Streamlit Cloud dashboard → your app → **Settings → Secrets**
-2. Add:
-   ```
-   ANTHROPIC_API_KEY = "sk-ant-your-key-here"
-   ```
-3. In `app.py`, replace the text_input line with:
-   ```python
-   anthropic_key = st.secrets.get("ANTHROPIC_API_KEY", "")
-   ```
+**Step 3 — (Optional) Pre-fill your API key as a secret**
+
+In Streamlit Cloud → your app → **Settings → Secrets**, add:
+```toml
+GEMINI_API_KEY = "AIzaSy-your-key-here"
+```
+Then replace the `st.text_input` block in `app.py` with:
+```python
+gemini_key = st.secrets.get("GEMINI_API_KEY", "")
+```
 
 ---
 
@@ -113,20 +113,6 @@ paperoracle/
 ├── requirements.txt    # Python dependencies
 └── README.md           # This file
 ```
-
----
-
-## 💡 Why Claude AI Instead of HuggingFace Hub LLM?
-
-The original project used `HuggingFaceHub` LLM (Mistral-7B) which caused:
-- Constant `401 Unauthorized` errors on free tier
-- Slow response times (30–60 sec per answer)
-- Deployment OOM crashes from loading `torch` + `transformers`
-
-Claude Haiku via Anthropic API solves all three:
-- Reliable auth with a simple API key
-- Responses in ~1 second
-- No heavy model loading — embeddings still run locally via sentence-transformers
 
 ---
 
