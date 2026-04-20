@@ -3,7 +3,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-import anthropic
+import google.generativeai as genai
 import tempfile
 import os
 
@@ -110,7 +110,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# SIDEBAR — HOW IT WORKS
+# SIDEBAR
 # ─────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚙️ How PaperOracle Works")
@@ -136,12 +136,12 @@ with st.sidebar:
         <p>Your question is embedded and FAISS finds the 3 most relevant chunks as context.</p>
     </div>
     <div class="concept-box">
-        <h4>Step 6 — Claude AI Answer</h4>
-        <p>The chunks + question are sent to Claude (Anthropic) which generates a grounded answer.</p>
+        <h4>Step 6 — Gemini AI Answer</h4>
+        <p>The chunks + question are sent to Google Gemini which generates a grounded answer.</p>
     </div>
     """, unsafe_allow_html=True)
     st.markdown("---")
-    st.markdown("**Stack:** LangChain · FAISS · HuggingFace · Claude AI · Streamlit")
+    st.markdown("**Stack:** LangChain · FAISS · HuggingFace · Gemini AI · Streamlit")
     st.markdown("**By:** [Tushar Sehgal](https://github.com/tusharsehgal584)")
 
 # ─────────────────────────────────────────────
@@ -158,12 +158,12 @@ for key, default in [
 # ─────────────────────────────────────────────
 # API KEY INPUT
 # ─────────────────────────────────────────────
-st.markdown("### 🔑 Anthropic API Key")
-st.caption("Get your free key at console.anthropic.com — takes 1 minute")
-anthropic_key = st.text_input(
-    "Paste your Anthropic API key",
+st.markdown("### 🔑 Google Gemini API Key")
+st.caption("100% free — get your key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) · No credit card needed")
+gemini_key = st.text_input(
+    "Paste your Gemini API key",
     type="password",
-    placeholder="sk-ant-xxxxxxxxxxxxxxxxxxxx"
+    placeholder="AIzaSy..."
 )
 
 # ─────────────────────────────────────────────
@@ -176,86 +176,70 @@ uploaded_file = st.file_uploader(
 )
 
 # ─────────────────────────────────────────────
-# CORE PIPELINE: Build FAISS index (cached)
+# BUILD FAISS INDEX
 # ─────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
 def build_index(file_bytes: bytes, filename: str):
-    """
-    Builds the FAISS vector index from a PDF.
-    Cached by Streamlit — only runs once per unique file.
-    """
-    # Save bytes to temp file (PyPDFLoader needs a path)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         tmp.write(file_bytes)
         tmp_path = tmp.name
 
-    # Load PDF
     loader = PyPDFLoader(tmp_path)
     documents = loader.load()
     os.unlink(tmp_path)
 
-    # Split into chunks
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
     chunks = splitter.split_documents(documents)
 
-    # Create embeddings (runs locally, no API needed)
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2",
         model_kwargs={"device": "cpu"}
     )
 
-    # Build FAISS index
     vectorstore = FAISS.from_documents(chunks, embeddings)
     return vectorstore, len(chunks)
 
 
-def ask_claude(api_key: str, question: str, context_chunks: list, chat_history: list) -> str:
-    """
-    Calls Claude API with the retrieved context + conversation history.
-    Much more reliable than HuggingFace Hub free tier.
-    """
-    # Build context from retrieved chunks
+# ─────────────────────────────────────────────
+# ASK GEMINI
+# ─────────────────────────────────────────────
+def ask_gemini(api_key: str, question: str, context_chunks: list, chat_history: list) -> str:
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-1.5-flash")  # free tier model
+
     context = "\n\n---\n\n".join([
         f"[Page {doc.metadata.get('page', 0) + 1}]\n{doc.page_content}"
         for doc in context_chunks
     ])
 
-    # Build conversation history for Claude
-    messages = []
-    for exchange in chat_history[-4:]:  # last 4 exchanges to avoid hitting context limit
-        messages.append({"role": "user", "content": exchange["question"]})
-        messages.append({"role": "assistant", "content": exchange["answer"]})
+    # Build history string
+    history_text = ""
+    for exchange in chat_history[-4:]:
+        history_text += f"User: {exchange['question']}\nAssistant: {exchange['answer']}\n\n"
 
-    # Add current question with context
-    messages.append({
-        "role": "user",
-        "content": f"""Answer the question below using ONLY the document excerpts provided.
-If the answer is not in the excerpts, say "I couldn't find that in the document."
-Always cite which page number(s) your answer comes from.
+    prompt = f"""You are a precise document assistant. Answer using ONLY the document excerpts below.
+If the answer is not found, say "I couldn't find that in the document."
+Always mention which page number(s) your answer comes from.
 
+{f'Previous conversation:{chr(10)}{history_text}' if history_text else ''}
 DOCUMENT EXCERPTS:
 {context}
 
-QUESTION: {question}"""
-    })
+QUESTION: {question}
 
-    client = anthropic.Anthropic(api_key=api_key)
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",  # Fast + cheap, perfect for RAG
-        max_tokens=1024,
-        system="You are a precise document assistant. Answer questions using only the provided document excerpts. Always cite page numbers.",
-        messages=messages
-    )
-    return response.content[0].text
+ANSWER:"""
+
+    response = model.generate_content(prompt)
+    return response.text
 
 
 # ─────────────────────────────────────────────
 # PROCESS BUTTON
 # ─────────────────────────────────────────────
-if uploaded_file and anthropic_key:
+if uploaded_file and gemini_key:
     if st.button("🚀 Process Document & Start Chatting"):
-        if not anthropic_key.startswith("sk-ant"):
-            st.error("That doesn't look like a valid Anthropic API key. It should start with sk-ant-")
+        if not gemini_key.startswith("AIza"):
+            st.error("That doesn't look like a valid Gemini API key. It should start with 'AIza'")
         else:
             with st.spinner("Reading PDF → Chunking → Creating embeddings → Building index..."):
                 try:
@@ -267,8 +251,8 @@ if uploaded_file and anthropic_key:
                 except Exception as e:
                     st.error(f"Error processing PDF: {str(e)}")
 
-elif uploaded_file and not anthropic_key:
-    st.warning("⚠️ Enter your Anthropic API key above first.")
+elif uploaded_file and not gemini_key:
+    st.warning("⚠️ Enter your Gemini API key above first.")
 
 # ─────────────────────────────────────────────
 # CHAT INTERFACE
@@ -282,19 +266,14 @@ if st.session_state.vectorstore:
 
     st.markdown("### 💬 Ask Your Document")
 
-    # Render chat history
     for exchange in st.session_state.chat_history:
         st.markdown(f'<div class="chat-user">🧑 {exchange["question"]}</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="chat-ai">🔮 {exchange["answer"]}</div>', unsafe_allow_html=True)
         if exchange.get("sources"):
-            pages = sorted(set([
-                doc.metadata.get("page", 0) + 1
-                for doc in exchange["sources"]
-            ]))
+            pages = sorted(set([doc.metadata.get("page", 0) + 1 for doc in exchange["sources"]]))
             for p in pages:
                 st.markdown(f'<span class="source-tag">📄 Page {p}</span>', unsafe_allow_html=True)
 
-    # Input
     question = st.text_input(
         "Your question",
         placeholder="e.g. What is the main conclusion? / Summarize section 2 / What are the key findings?",
@@ -310,20 +289,16 @@ if st.session_state.vectorstore:
             st.rerun()
 
     if ask_clicked and question:
-        if not anthropic_key:
-            st.error("Anthropic API key is missing. Please paste it above.")
+        if not gemini_key:
+            st.error("Gemini API key is missing. Please paste it above.")
         else:
             with st.spinner("Searching document and generating answer..."):
                 try:
-                    # Retrieve relevant chunks
-                    retriever = st.session_state.vectorstore.as_retriever(
-                        search_kwargs={"k": 3}
-                    )
+                    retriever = st.session_state.vectorstore.as_retriever(search_kwargs={"k": 3})
                     source_docs = retriever.invoke(question)
 
-                    # Get answer from Claude
-                    answer = ask_claude(
-                        api_key=anthropic_key,
+                    answer = ask_gemini(
+                        api_key=gemini_key,
                         question=question,
                         context_chunks=source_docs,
                         chat_history=st.session_state.chat_history
@@ -335,22 +310,23 @@ if st.session_state.vectorstore:
                         "sources": source_docs
                     })
                     st.rerun()
-                except anthropic.AuthenticationError:
-                    st.error("Invalid Anthropic API key. Please check and try again.")
-                except anthropic.RateLimitError:
-                    st.error("Rate limit hit. Wait a moment and try again.")
                 except Exception as e:
-                    st.error(f"Error: {str(e)}")
+                    err = str(e)
+                    if "API_KEY_INVALID" in err or "invalid" in err.lower():
+                        st.error("Invalid Gemini API key. Double-check it at aistudio.google.com/apikey")
+                    elif "quota" in err.lower():
+                        st.error("Free quota hit. Wait a minute and try again.")
+                    else:
+                        st.error(f"Error: {err}")
 
 else:
-    # Empty state
     st.markdown("---")
     st.markdown("""
     <div style="text-align:center; color:#484f58; padding: 40px 0;">
         <div style="font-size:3rem;">🔮</div>
-        <div style="font-size:1rem; margin-top:10px;">Upload a PDF and enter your Anthropic API key to begin</div>
+        <div style="font-size:1rem; margin-top:10px;">Upload a PDF and enter your Gemini API key to begin</div>
         <div style="font-size:0.84rem; margin-top:6px;">
-            Get a free key at <strong>console.anthropic.com</strong>
+            Get a <strong>100% free</strong> key at <strong>aistudio.google.com/apikey</strong>
         </div>
     </div>
     """, unsafe_allow_html=True)
